@@ -38,7 +38,7 @@ ggplot(data=cases, aes(x=CASE_CATEGORY)) +
 
 
 cases$CASE_TYPE <- factor(cases$CASE_TYPE)  # Converts the gear variable into a factor
-
+# make plots for case types per case category (Shareholder risks, etc)
 for (case_category in unique(cases$CASE_CATEGORY)) {
   ggplot(data = cases[which(cases$CASE_CATEGORY==case_category),], aes(x = CASE_TYPE, y = ..prop.., group = 1)) + 
   geom_bar( fill = "blue") + 
@@ -52,3 +52,33 @@ for (case_category in unique(cases$CASE_CATEGORY)) {
   ggsave(paste("Distribution of case types for ", case_category, ".png"))
 }
 
+
+
+# find years in text case description
+library(stringr)
+cases = cases %>%
+  mutate(year_missing = str_extract(CASE_DESCRIPTION, '(?<=, )([0-9]{4})'))
+cases$year_missing = as.numeric(cases$year_missing)
+# merge years with the ones found in text
+cases$YEAR = coalesce(cases$YEAR, cases$year_missing)
+cat('Number of the years still missing? ',nrow(cases[which(is.na(cases$YEAR)),]))
+
+cases_year = cases %>% group_by(YEAR) %>% summarize(count = n())
+cases_year
+cases_year = na.omit(cases_year)
+cat("How many claims per year in average? ", mean(cases_year$count))
+cat("How many years >0?", nrow(cases_year))
+cat("Last year = ", max(cases_year$YEAR))
+
+# plot frequency of claims by year
+ggplot(data = cases[which(cases$YEAR >1950),], aes(x = YEAR, y = ..prop.., group = 1)) + 
+  geom_bar( fill = "blue") + 
+  #geom_text(stat='count', aes(label=round(..prop.., digits=6)), vjust=-1) +
+  ggtitle("Distribution of cases by year.") + 
+  xlab("YEAR")  +
+  ylab("Relative Frequency") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  expand_limits(y=0.1, x=c(1950, 2022)) # fix the limits of the graph
+  #scale_x_continuous(breaks = round(seq(1950, 2022, by = 10),1))
+
+ggsave("Distribution of cases by year.png")
