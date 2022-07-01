@@ -96,9 +96,79 @@ ggplot(data = cases, aes(x = CASESTATUS, y = ..prop.., group = 1)) +
 
 ggsave("Distribution of case status.png")
 
+# summarize the industry type by nb claims
+industries = stat %>% group_by(by=SIC_DESC) %>%
+                      summarize(NbClaims = n()) %>%
+                      arrange(NbClaims)
+
+write.csv(industries, 'industries.csv')
+
+# summarize the country code by nb claims
+countries_avg = cases %>% group_by(COUNTRY_CODE, YEAR) %>%
+  summarize(NbClaims = n()) %>%
+  group_by(COUNTRY_CODE) %>%
+  summarize(NbClaims = mean(NbClaims)) %>%
+  arrange(desc(NbClaims)) %>%
+  mutate(NbClaims = round(NbClaims, 3))
+
+write.table(countries_avg, 'countries_avg.csv', dec=',')
+
 sum(nrow(cases[with(cases, which(CASESTATUS %in% c("Settled", "Dismissed"))),]))
 
 write.csv(cases, "cases_cleaned.csv")
+
+# grab the table to relate country code and subregion
+# work out the subregions to join countries
+countries_code = read.csv("https://raw.githubusercontent.com/lukes/ISO-3166-Countries-with-Regional-Codes/master/all/all.csv")
+countries_code = countries_code[,c('alpha.3', 'sub.region')]
+
+# Europe
+countries_code$sub.region[which(countries_code$alpha.3=="DEU")] = 'Germany'
+countries_code$sub.region[which(countries_code$alpha.3=="ESP")] = 'Spain'
+countries_code$sub.region[which(countries_code$alpha.3=="FRA")] = 'France'
+countries_code$sub.region[which(countries_code$alpha.3=="GBR")] = 'United Kingdom'
+countries_code$sub.region[which(countries_code$alpha.3=="NLD")] = 'Netherlands'
+countries_code$sub.region[which(countries_code$alpha.3=="CHE")] = 'Switzerland'
+europe_regions = c('Northern Europe',
+                   'Southern Europe',
+                   'Eastern Europe',
+                   'Western Europe')
+countries_code$sub.region[which(countries_code$sub.region %in% europe_regions)] = 'Rest of Europe'
+#Africa
+africa_regions = c('Sub-Saharan Africa',
+                   'Northern Africa')
+countries_code$sub.region[which(countries_code$sub.region %in% africa_regions)] = 'Africa'
+# America
+countries_code$sub.region[which(countries_code$alpha.3=="USA")] = 'United States'
+countries_code$sub.region[which(countries_code$sub.region=="Northern America")] = 'United States'
+countries_code$sub.region[which(countries_code$alpha.3=="CAN")] = 'Canada'
+# Asia
+countries_code$sub.region[which(countries_code$alpha.3=="CHN")] = 'China'
+countries_code$sub.region[which(countries_code$alpha.3=="HKG")] = 'Honk Kong'
+countries_code$sub.region[which(countries_code$alpha.3=="JPN")] = 'Japan'
+asia_regions = c('Eastern Asia','Southern Asia','South-eastern Asia','Western Asia','Central Asia')
+countries_code$sub.region[which(countries_code$sub.region %in% asia_regions)] = 'Rest of Asia'
+# Middle East
+countries_code$sub.region[which(countries_code$alpha.3=="ISR")] = 'Israel'
+# Oceania
+oceania_regions = c("Australia and New Zealand",
+                    "Micronesia",
+                    "Polynesia")
+countries_code$sub.region[which(countries_code$sub.region %in% oceania_regions)] = 'Oceania'
+
+# join the subregions in the dataset by country code
+library(dplyr)
+cases = cases %>% left_join(countries_code, by=c("COUNTRY_CODE" = "alpha.3"))
+
+# summarize the sub region by nb claims
+regions_avg = cases %>% group_by(sub.region, YEAR) %>%
+  summarize(NbClaims = n()) %>%
+  group_by(sub.region) %>%
+  summarize(NbClaims = mean(NbClaims)) %>%
+  arrange(desc(NbClaims)) %>%
+  mutate(NbClaims = round(NbClaims, 3))
+
+write.table(regions_avg, 'regions_avg.csv', dec=',')
 
 # outer join cases and stat by company id
 all_data = merge(x = cases, y = stat, by = "COMPANY_ID", all.x = TRUE)
@@ -123,8 +193,8 @@ cdata = all_data %>%
              group_by(YEAR, COMPANY_ID, is_USA_juris) %>%
              summarise(ClaimNb = n(), 
                        REVENUES = unique(REVENUES),
-                       COUNTRY_CODE = unique(COUNTRY_CODE),
-                       SIC_DESC = unique(SIC_DESC),
+                       SUB_REGION = unique(sub.region),
+                       #SIC_DESC = unique(SIC_DESC),
                        EMPLOYEES = unique(EMPLOYEES))
 
 # drop all NANs
@@ -132,6 +202,12 @@ cdata <- cdata[complete.cases(cdata),]
 
 # remove dots from REVENUES
 cdata$REVENUES<-gsub("\\.","",as.character(cdata$REVENUES))
+
+# plot nbclaim against sic_desc
+ggplot(cdata, aes(x=SIC_DESC, y=ClaimNb)) +  
+    geom_boxplot(fill='green') +
+    ylim(0,20)
+  
 
 # Calculate total number of policies
 n_policies = nrow(cdata)
@@ -203,47 +279,66 @@ nrow(test)/n
 # 3. GLM
 ################################################################################
 
-IndustryGLM <- cbind( unique(learn$SIC_DESC), c(1:length(unique(learn$SIC_DESC))))
-learn$IndustryGLM <- as.factor(learn$SIC_DESC)
+#IndustryGLM <- cbind( unique(learn$SIC_DESC), c(1:length(unique(learn$SIC_DESC))))
+#learn$IndustryGLM <- as.factor(learn$SIC_DESC)
 learn$USAJurisGLM <- as.integer(learn$is_USA_juris)
 learn$REVENUESGLM <- as.numeric(learn$REVENUES)
-learn$COUNTRYGLM <- as.factor(learn$COUNTRY_CODE)
+learn$REGIONGLM <- as.factor(learn$SUB_REGION)
 learn$EMPLOYEESGLM <- as.numeric(learn$EMPLOYEES)
 
 ClaimNb         <- learn$ClaimNb
-IndustryGLM     <- learn$IndustryGLM
+#IndustryGLM     <- learn$IndustryGLM
 USAJurisGLM     <- learn$USAJurisGLM
 REVENUESGLM      <- learn$REVENUESGLM 
-COUNTRYGLM      <- learn$COUNTRYGLM 
+REGIONGLM      <- learn$REGIONGLM
 EMPLOYEESGLM    <- learn$EMPLOYEESGLM
 
-glm<-glm(formula=ClaimNb ~ IndustryGLM + USAJurisGLM + REVENUESGLM + COUNTRYGLM + EMPLOYEESGLM, family=poisson(), data = learn)
-learn$fit <- fitted(glm)
-
-test$IndustryGLM <- as.factor(test$SIC_DESC)
+#test$IndustryGLM <- as.factor(test$SIC_DESC)
 test$USAJurisGLM <- as.integer(test$is_USA_juris)
 test$REVENUESGLM <- as.numeric(test$REVENUES)
-test$COUNTRYGLM <- as.factor(test$COUNTRY_CODE)
+test$REGIONGLM <- as.factor(test$SUB_REGION)
 test$EMPLOYEESGLM <- as.numeric(test$EMPLOYEES)
 
-# ERROR - there are unknown factors in the test set
-# Faktor 'IndustryGLM' hat neue Stufen ADJUSTMENT AND COLLECTION SERVICES, BEAUTY SHOPS, CANE SUGAR, EXCEPT REFINING, CHEWING AND SMOKING TOBACCO AND SNUFF, COMPUTER AND COMPUTER SOFTWARE STORES, CRUSHED AND BROKEN LIMESTONE, FLOUR AND OTHER GRAIN MILL PRODUCTS, FROZEN SPECIALTIES, NEC, INDUSTRIAL PROCESS FURNACES AND OVENS, JEWELRY, PRECIOUS METAL, MEAT PACKING PLANTS, ORDNANCE AND ACCESSORIES, NEC, PHOTOFINISHING LABORATORIES, PRIMARY METAL PRODUCTS, NEC, TESTING LABORATORIES
-test$fit <- predict(glm, newdata=test, type="response")
+glm_freq = function(formula, glm_name){
+  # GLM model withl all covariates
+  glm<-glm(formula=formula, family=poisson(), data = learn)
+  learn[,glm_name] <- fitted(glm)
+  summary(glm)
+  
+  
+  # ERROR - there are unknown factors in the test set
+  # Faktor 'IndustryGLM' hat neue Stufen ADJUSTMENT AND COLLECTION SERVICES, BEAUTY SHOPS, CANE SUGAR, EXCEPT REFINING, CHEWING AND SMOKING TOBACCO AND SNUFF, COMPUTER AND COMPUTER SOFTWARE STORES, CRUSHED AND BROKEN LIMESTONE, FLOUR AND OTHER GRAIN MILL PRODUCTS, FROZEN SPECIALTIES, NEC, INDUSTRIAL PROCESS FURNACES AND OVENS, JEWELRY, PRECIOUS METAL, MEAT PACKING PLANTS, ORDNANCE AND ACCESSORIES, NEC, PHOTOFINISHING LABORATORIES, PRIMARY METAL PRODUCTS, NEC, TESTING LABORATORIES
+  test[,glm_name] <- predict(glm, newdata=test, type="response")
+  
+  ######################
+  # In-Sample errors
+  ######################
+  
+  in_sample <- 2*( sum( learn[,glm_name] ) - sum( learn$ClaimNb ) + sum( log(( learn$ClaimNb / learn[,glm_name] )^(learn$ClaimNb))))
+  average_in_sample <- in_sample / nrow(learn)
+  cat("in-sample avg error = ", average_in_sample,'\n')
+  
+  ######################
+  # Out-of-Sample errors
+  ######################
+  
+  out_of_sample <- 2*( sum( test[,glm_name] ) - sum( test$ClaimNb ) + sum( log(( test$ClaimNb / test[,glm_name] )^(test$ClaimNb))))
+  average_out_of_sample <- out_of_sample / nrow(test)
+  cat("out-of-sample avg error = ", average_out_of_sample)
+  
+  results <- list(
+    'in-sample avg error'=average_in_sample,
+    'out-of-sample avg error'=average_out_of_sample,
+    'learn' = fitted(glm),
+    'test' = predict(glm, newdata=test, type="response"),
+    'model' = glm
+    )
+  
+  return(results)
+}
 
-######################
-# In-Sample errors
-######################
-
-in_sample <- 2*( sum( learn$fit ) - sum( learn$ClaimNb ) + sum( log(( learn$ClaimNb / learn$fit )^(learn$ClaimNb))))
-average_in_sample <- in_sample / nrow(learn)
-
-######################
-# Out-of-Sample errors
-######################
-
-out_of_sample <- 2*( sum( test$fit ) - sum( test$ClaimNb ) + sum( log(( test$ClaimNb / test$fit )^(test$ClaimNb))))
-average_out_of_sample <- out_of_sample / nrow(test)
-
+results1 = glm_freq(ClaimNb ~  USAJurisGLM + REVENUESGLM + REGIONGLM + EMPLOYEESGLM, 'GLM1')
+results2 = glm_freq(ClaimNb ~  USAJurisGLM, 'GLM2')
 
 ################################################################################
 # 4. Tree
