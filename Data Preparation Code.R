@@ -179,8 +179,14 @@ all_data$is_USA_juris[is.na(all_data$is_USA_juris)] <- 0
 
 write.csv(all_data, "all_data.csv")
 
-sic_missing = nrow(all_data[which(is.na(all_data$SIC_DESC)),])
-cat("number of missing SIC = ", sic_missing)
+# use the manually extended file
+library("readxl")
+all_data = read_excel(paste("Templates ID/", "All Data plus data cleansing.xlsx", sep=""))
+all_data$Revenue = as.numeric(all_data$`Revenue USD mm`)
+all_data$Revenue = as.numeric(round(all_data$Revenue*1000, 2))
+
+sic_missing = nrow(all_data[which(is.na(all_data$Sector)),])
+cat("number of missing industry = ", sic_missing)
 
 
 library(tidyr)
@@ -192,10 +198,12 @@ cdata = all_data %>%
   #drop_na(SIC_DESC, COUNTRY_CODE, CASESTATUS) %>%
   group_by(YEAR, COMPANY_ID, is_USA_juris) %>%
   summarise(ClaimNb = n(), 
-            REVENUES = unique(REVENUES),
+            REVENUES = unique(Revenue),
             SUB_REGION = unique(sub.region),
+            Sector = unique(Sector)
             #SIC_DESC = unique(SIC_DESC),
-            EMPLOYEES = unique(EMPLOYEES))
+            #EMPLOYEES = unique(EMPLOYEES))
+  )
 
 # drop all NANs
 cdata <- cdata[complete.cases(cdata),]
@@ -204,7 +212,7 @@ cdata <- cdata[complete.cases(cdata),]
 cdata$REVENUES<-gsub("\\.","",as.character(cdata$REVENUES))
 
 # plot nbclaim against sic_desc
-ggplot(cdata, aes(x=SIC_DESC, y=ClaimNb)) +  
+ggplot(cdata, aes(x=INDUSTRY, y=ClaimNb)) +  
   geom_boxplot(fill='green') +
   ylim(0,20)
 
